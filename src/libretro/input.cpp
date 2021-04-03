@@ -8,6 +8,12 @@ InputState input_state;
 u32 input_mask = 0xFFF;
 static bool has_touched = false;
 
+// 0 = not pressed, 1 = swipe right, 2 = swipe left
+static int gesture_button = 0;
+static int swipe_position_x = 130;
+bool swipe_right_btn_released = true;
+bool swipe_left_btn_released = true;
+
 #define ADD_KEY_TO_MASK(key, i) if (!!input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, key)) input_mask &= ~(1 << i); else input_mask |= (1 << i);
 
 bool cursor_enabled(InputState *state)
@@ -34,14 +40,35 @@ void update_input(InputState *state)
 
    NDS::SetKeyMask(input_mask);
 
-   bool lid_closed_btn = !!input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3);
-   if(lid_closed_btn != state->lid_closed)
+   //bool lid_closed_btn = !!input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3);
+   bool swipe_left_btn = !!input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3);
+   bool swipe_right_btn = !!input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2);
+
+   if (!swipe_right_btn)
    {
-      NDS::SetLidClosed(lid_closed_btn);
-      state->lid_closed = lid_closed_btn;
+      swipe_right_btn_released = true;
    }
 
-   state->holding_noise_btn = !!input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2);
+   if (!swipe_left_btn)
+   {
+      swipe_left_btn_released = true;
+   }
+
+   if(swipe_right_btn && gesture_button == 0 && swipe_right_btn_released == true)
+   {
+      gesture_button = 1;
+      swipe_position_x = 130;
+      swipe_right_btn_released = false;
+   }
+
+   if(swipe_left_btn && gesture_button == 0 && swipe_left_btn_released == true)
+   {
+      gesture_button = 2;
+      swipe_position_x = 205;
+      swipe_left_btn_released = false;
+   }
+
+   //state->holding_noise_btn = !!input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2);
    state->swap_screens_btn = !!input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2);
 
    if(current_screen_layout != ScreenLayout::TopOnly)
@@ -106,13 +133,46 @@ void update_input(InputState *state)
       state->touching = false;
    }
 
-   if(state->touching)
+   if(state->touching || gesture_button != 0)
    {
-      NDS::TouchScreen(state->touch_x, state->touch_y);
-      has_touched = true;
+         switch(gesture_button)
+         {
+            case 1:
+               log_cb(RETRO_LOG_INFO, std::string("HOTKEY: Touch positions: X = 127, Y = " + std::to_string(swipe_position_x) + "\n").c_str());
+               NDS::TouchScreen(127, swipe_position_x);
+               swipe_position_x += 25;
+
+               if(swipe_position_x > 205)
+               {
+                  log_cb(RETRO_LOG_INFO, std::string("HOTKEY: Release Screen\n").c_str());
+                  NDS::ReleaseScreen();
+                  gesture_button = 0;
+               }
+               break;
+
+            case 2:
+               log_cb(RETRO_LOG_INFO, std::string("HOTKEY: Touch positions: X = 127, Y = " + std::to_string(swipe_position_x) + "\n").c_str());
+               NDS::TouchScreen(127, swipe_position_x);
+               swipe_position_x -= 25;
+
+               if(swipe_position_x < 130)
+               {
+                  log_cb(RETRO_LOG_INFO, std::string("HOTKEY: Release Screen\n").c_str());
+                  NDS::ReleaseScreen();
+                  gesture_button = 0;
+               }
+               break;
+
+            default:
+               NDS::TouchScreen(state->touch_x, state->touch_y);
+               log_cb(RETRO_LOG_INFO, std::string("TOUCH: Touch positions: X = " + std::to_string(state->touch_x) + ", Y = " + std::to_string(state->touch_y) + "\n").c_str());
+               has_touched = true;
+               break;
+         }
    }
    else if(has_touched)
    {
+      log_cb(RETRO_LOG_INFO, std::string("TOUCH: Release Screen\n").c_str());
       NDS::ReleaseScreen();
       has_touched = false;
    }
